@@ -11,8 +11,8 @@ def split_timeline(elastic_data_location, timeline_data_location):
     for instance in data:
         for i in instance["emotion_time_line"]:
             timeline_data.append({
-                "tale": instance["name"],
-                "top_tale_emotion": instance["top_emotion"],
+                "name": instance["name"],
+                "top_emotion": instance["top_emotion"],
                 "emotion": i["emotion"],
                 "intensity": i["intensity"],
                 "timestamp": i["timestamp"],

@@ -46,7 +46,9 @@ blacklist = ["Internet", "Chicago", "Cold War", "Jesus", "Adolf Hitler", "Brexit
              "Internet", "Latin", "Whatever"
              ]
 
-emotion_list = ['Happy', 'Surprised', 'Sad', 'Angry-Disgusted', 'Fearful']
+emotion_list = ['Happy', 'Surprised', 'Sad', 'Angry-Disgusted', 'Fearful', 'Other']
+encode_dict = {label: i for i, label in enumerate(emotion_list)}
+
 emotion_color = ["green", "yellow", "blue", "red", "orange"]
 timeline_summary = dict()
 for top_emotion in emotion_list:
@@ -66,21 +68,30 @@ def is_duplicate(data_array, name):
     return False
 
 
-def emotion_processing(data, emotion_df, tale_name, split=10, confidence_threshold=0.8):
+def emotion_processing(data, emotion_df, tale_name, split=10, confidence_threshold=0.8, draw_timeline=False):
     tale_data = emotion_df.loc[emotion_df["enTitle"] == tale_name]
     if len(tale_data.index) == 0:
         print(f"Tale {tale_name} missing")
         return False
+    tale_data.loc[tale_data["probability"] < confidence_threshold, "relation"] = "Other"
 
-    f_emo = tale_data.loc[tale_data["probability"] > confidence_threshold]
-    data["emotions"] = list(f_emo["relation"])
+    # filtered_emo = tale_data.loc[tale_data["probability"] > confidence_threshold]
+    # data["emotions"] = list(f_emo["relation"])
+    emo_array = np.array([])
+    for row_index in tale_data.index:
+        current_emo = encode_dict[tale_data.loc[row_index, "relation"]]
+        ch_len = len(tale_data.loc[row_index, "sentence"])
 
-    filtered_length = len(f_emo.index)
+        emo_array = np.concatenate((emo_array, np.full(ch_len, current_emo, np.uint8)))
+
+    f_emo = pd.DataFrame({"relation": emo_array})
+
+    length = len(f_emo.index)
     emotion_summary = dict()
-    org_length = len(tale_data.index)
-    min_split = min(split, org_length)
-    first = tale_data.index[0]
-    last = tale_data.index[-1] + 1
+    emotion_summary["total"] = len(tale_data[tale_data["relation"] != "Other"]) / len(tale_data.index)
+    min_split = min(split, length)
+    first = 0
+    last = length
 
     emotion_time_line = []
     top_percentage = 0
@@ -88,9 +99,10 @@ def emotion_processing(data, emotion_df, tale_name, split=10, confidence_thresho
 
     temporary_summary = dict()
     for emotion_id, emotion in enumerate(emotion_list):
-
+        if emotion == "Other":
+            continue
         # Whole tale summary
-        emo_percentage = len(f_emo[f_emo["relation"] == emotion]) / filtered_length
+        emo_percentage = len(f_emo[f_emo["relation"] == emotion_id]) / length
         emotion_summary[emotion] = emo_percentage
         if emo_percentage > top_percentage:
             top_percentage = emo_percentage
@@ -100,7 +112,7 @@ def emotion_processing(data, emotion_df, tale_name, split=10, confidence_thresho
         intensity_array = []
         indices = np.round(np.linspace(first, last, min_split + 1))
         for cur, _ in enumerate(indices[1:], 1):
-            count = f_emo.loc[(f_emo["relation"] == emotion)
+            count = f_emo.loc[(f_emo["relation"] == emotion_id)
                               & (f_emo.index >= indices[cur - 1])
                               & (f_emo.index < indices[cur])].shape[0]
 
@@ -119,17 +131,18 @@ def emotion_processing(data, emotion_df, tale_name, split=10, confidence_thresho
                                       "intensity": intensity})
 
         temporary_summary[emotion] = np.copy(interpolated_array)
-        # fig.add_trace(go.Scatter(x=np.arange(len(interpolated_array)), y=interpolated_array, mode='lines',
-        #                          line_color=emotion_color[emotion_id], name=emotion))
+        if draw_timeline:
+            fig.add_trace(go.Scatter(x=np.arange(len(interpolated_array)), y=interpolated_array, mode='lines',
+                                     line_color=emotion_color[emotion_id], name=emotion))
 
     for e in temporary_summary.keys():
         timeline_summary[data["top_emotion"]][e] += temporary_summary[e]
     timeline_summary[data["top_emotion"]]["sum"] += 1
 
-    # fig.update_layout(title=tale_name)
-    # fig.write_html(f'./images/emotion_timeline/{tale_name}.html')
+    if draw_timeline:
+        fig.update_layout(title=tale_name)
+        fig.write_html(f'../images/emotion_timeline_character/{tale_name}.html')
 
-    emotion_summary["total"] = filtered_length / org_length
     data["emotion_summary"] = emotion_summary
     data["emotion_time_line"] = emotion_time_line
 
@@ -142,12 +155,12 @@ def olfactory_processing(data, olfactory_df, tale_name):
 
 
 def construct_elastic(emotions_location, olfactory_location, concepts_location, tales_locations,
-                      output_data, output_timeline):
+                      output_data, output_timeline, draw_timeline=False):
     whole_data = []
 
     emotions_df = pd.read_csv(emotions_location, index_col="Unnamed: 0")
     olfactory_df = pd.read_csv(olfactory_location)
-    olfactory_df.drop_duplicates(subset='id', inplace=True)
+    # olfactory_df.drop_duplicates(subset='id', inplace=True)
 
     with open(concepts_location, 'r') as file:
         concepts = json.load(file)
@@ -171,7 +184,7 @@ def construct_elastic(emotions_location, olfactory_location, concepts_location, 
                 for sentence in tokenizer.tokenize(paragraph["enPar"]):
                     data["sentences"].append(sentence)
 
-            valid = emotion_processing(data, emotions_df, data["name"])
+            valid = emotion_processing(data, emotions_df, data["name"], draw_timeline=draw_timeline)
             olfactory_processing(data, olfactory_df, data["name"])
             filtered_concepts = []
             for c in concepts[data["name"]]:
@@ -187,16 +200,21 @@ def construct_elastic(emotions_location, olfactory_location, concepts_location, 
             file.write(f'{json.dumps(data_instance)}\n')
 
     split_timeline(output_data, output_timeline)
-    # Draw timelines for each emotion
 
-    # for top_emotion in emotion_list:
-    #     fig = go.Figure()
-    #     for emotion_id, emotion in enumerate(emotion_list):
-    #         fig.add_trace(go.Scatter(x=np.arange(10), y=timeline_summary[top_emotion][emotion], mode='lines',
-    #                                  line_color=emotion_color[emotion_id], name=emotion))
-    #
-    #     fig.update_layout(title=top_emotion)
-    #     fig.write_html(f'./images/emotion_timeline_summary/{top_emotion}.html')
+    # Draw timelines for each emotion
+    if draw_timeline:
+        for top_emotion in emotion_list:
+            if top_emotion == "Other":
+                continue
+            fig = go.Figure()
+            for emotion_id, emotion in enumerate(emotion_list):
+                if emotion == "Other":
+                    continue
+                fig.add_trace(go.Scatter(x=np.arange(10), y=timeline_summary[top_emotion][emotion], mode='lines',
+                                         line_color=emotion_color[emotion_id], name=emotion))
+
+            fig.update_layout(title=top_emotion)
+            fig.write_html(f'../images/emotion_timeline_summary/{top_emotion}.html')
 
 
 if __name__ == '__main__':
@@ -204,6 +222,9 @@ if __name__ == '__main__':
                       olfactory_location="../data/olfactory_objects_in_smell_sentences_only.csv",
 
                       concepts_location="../data/concepts-per-tale.json",
-                      tales_locations=["../data/tales-grimm.json", "../data/tales-andersen.json"], # Processed tales data (turned into a json)
-                      output_data=f"../data/elastic.jsonl", # Output 1
-                      output_timeline=f"../data/timeline.jsonl") # Output 2
+                      tales_locations=["../data/tales-grimm.json", "../data/tales-andersen.json"],
+                      # Processed tales data (turned into a json)
+                      output_data=f"../data/elastic.jsonl",  # Output 1
+                      output_timeline=f"../data/timeline.jsonl",  # Output 2
+                      draw_timeline=False
+                      )
