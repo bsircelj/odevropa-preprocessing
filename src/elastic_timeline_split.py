@@ -1,21 +1,9 @@
 import json
-import sys
-import requests
-from collections import Counter
-import numpy as np
-import traceback
-import pandas as pd
-import time
-from datetime import datetime, timedelta
-import nltk.data
-import urllib.parse
-import plotly.graph_objects as go
-import scipy
 
 
-def split_timeline():
+def split_timeline(elastic_data_location, timeline_data_location):
     data = []
-    with open(f"../data/elastic.jsonl", 'r') as file:
+    with open(elastic_data_location, 'r') as file:
         for line in file.readlines():
             data.append(json.loads(line))
 
@@ -34,14 +22,15 @@ def split_timeline():
             })
         del instance["emotion_time_line"]
 
-    with open(f"../data/elastic.jsonl", 'w') as file:
+    with open(elastic_data_location, 'w') as file:
         for data_instance in data:
             file.write(f'{json.dumps(data_instance)}\n')
 
-    with open(f"../data/timeline.jsonl", 'w') as file:
+    with open(timeline_data_location, 'w') as file:
         for data_instance in timeline_data:
             file.write(f'{json.dumps(data_instance)}\n')
 
 
 if __name__ == '__main__':
-    split_timeline()
+    split_timeline(elastic_data_location=f"../data/elastic.jsonl",
+                   timeline_data_location=f"../data/timeline.jsonl")

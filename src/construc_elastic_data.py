@@ -11,6 +11,7 @@ import nltk.data
 import urllib.parse
 import plotly.graph_objects as go
 import scipy
+from elastic_timeline_split import split_timeline
 
 blacklist_old = ["Pakistan", "Internet", "Chicago", "Canada", "Cold War", "Jesus", "Adolf Hitler", "China", "Brexit",
                  "Latin", "Hebrew language", "Apollo 11", "COVID-19 pandemic", "World War", "Elizabeth II",
@@ -140,18 +141,19 @@ def olfactory_processing(data, olfactory_df, tale_name):
     data["olfactory_objects"] = list(tale_data["olfactory_object"])
 
 
-def construct_elastic(emotions_location, olfactory_location):
+def construct_elastic(emotions_location, olfactory_location, concepts_location, tales_locations,
+                      output_data, output_timeline):
     whole_data = []
 
     emotions_df = pd.read_csv(emotions_location, index_col="Unnamed: 0")
     olfactory_df = pd.read_csv(olfactory_location)
     olfactory_df.drop_duplicates(subset='id', inplace=True)
 
-    with open("../data/archive/concepts-per-tale2.json", 'r') as file:
+    with open(concepts_location, 'r') as file:
         concepts = json.load(file)
     tokenizer = nltk.data.load('tokenizers/punkt/english.pickle')
 
-    for filename in ["../data/archive/tales-grimm.json", "../data/archive/tales-andersen.json"]:
+    for filename in tales_locations:
         with open(filename) as f:
             tales = json.load(f)
 
@@ -180,10 +182,11 @@ def construct_elastic(emotions_location, olfactory_location):
             if valid:
                 whole_data.append(data)
 
-    with open(f"../data/elastic.jsonl", 'w') as file:
+    with open(output_data, 'w') as file:
         for data_instance in whole_data:
             file.write(f'{json.dumps(data_instance)}\n')
 
+    split_timeline(output_data, output_timeline)
     # Draw timelines for each emotion
 
     # for top_emotion in emotion_list:
@@ -197,8 +200,10 @@ def construct_elastic(emotions_location, olfactory_location):
 
 
 if __name__ == '__main__':
-    # construct_elastic("../data/archive/predictions_with_tile_id.csv",
-    #                   "../data/archive/predictions-olfactory-tale_olfactory_objects.csv")
+    construct_elastic(emotions_location="../data/predictions_with_tile_id.csv",
+                      olfactory_location="../data/olfactory_objects_in_smell_sentences_only.csv",
 
-    construct_elastic("../data/april_update/predictions_with_tile_id.csv",
-                      "../data/april_update/olfactory_objects_in_smell_sentences_only.csv")
+                      concepts_location="../data/concepts-per-tale.json",
+                      tales_locations=["../data/tales-grimm.json", "../data/tales-andersen.json"], # Processed tales data (turned into a json)
+                      output_data=f"../data/elastic.jsonl", # Output 1
+                      output_timeline=f"../data/timeline.jsonl") # Output 2
